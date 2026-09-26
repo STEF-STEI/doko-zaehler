@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doppelkopf Zähler</title>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --accent: #16a085;
+            --light: #ecf0f1;
+            --dark: #2c3e50;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--light);
+            color: var(--dark);
+            margin: 0;
+            padding: 15px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h1, h2 { text-align: center; color: var(--primary); }
+        button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:hover { opacity: 0.9; }
+        .group-card {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            cursor: pointer;
+        }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .form-group input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .table-container { overflow-x: auto; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; text-align: center; }
+        th, td { padding: 10px; border: 1px solid #ddd; }
+        th { background-color: var(--primary); color: white; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        .total-row { font-weight: bold; background-color: #ddd !important; }
+        .flex-inputs { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+        .flex-inputs input { flex: 1; padding: 8px; }
+        .back-btn { background: #7f8c8d; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- RUNDEN-AUSWAHL -->
+    <div id="view-home">
+        <h1>♣️ Doppelkopf Zähler ♦️</h1>
+        <h2>Deine Runden</h2>
+        <div id="groups-list"></div>
+        <button onclick="showCreateGroup()">➕ Neue Runde anlegen</button>
+    </div>
+
+    <!-- RUNDEN ERSTELLEN -->
+    <div id="view-create" style="display:none;">
+        <button class="back-btn" onclick="showHome()">⬅️ Zurück</button>
+        <h2>Neue Runde erstellen</h2>
+        <div class="form-group">
+            <label for="group-name">Name der Runde (z.B. Stammtisch):</label>
+            <input type="text" id="group-name" placeholder="Freitags-Runde">
+        </div>
+        <div class="form-group">
+            <label>Spieler (4 oder 5 Namen eingeben):</label>
+            <div id="player-inputs">
+                <input type="text" class="player-name-input" placeholder="Spieler 1" style="margin-bottom:5px;"><br>
+                <input type="text" class="player-name-input" placeholder="Spieler 2" style="margin-bottom:5px;"><br>
+                <input type="text" class="player-name-input" placeholder="Spieler 3" style="margin-bottom:5px;"><br>
+                <input type="text" class="player-name-input" placeholder="Spieler 4" style="margin-bottom:5px;"><br>
+                <input type="text" class="player-name-input" placeholder="Spieler 5 (optional)" style="margin-bottom:5px;">
+            </div>
+        </div>
+        <button onclick="saveNewGroup()">Runde starten</button>
+    </div>
+
+    <!-- SPIEL-ANSICHT -->
+    <div id="view-game" style="display:none;">
+        <button class="back-btn" onclick="showHome()">⬅️ Hauptmenü</button>
+        <h2 id="game-title">Aktive Runde</h2>
+        
+        <div id="geber-info" style="font-weight:bold; color:var(--accent); text-align:center; margin-bottom:15px;"></div>
+
+        <h3>Neue Spielrunde eintragen</h3>
+        <div id="score-inputs-container"></div>
+        <button onclick="addRoundScores()">Spielwert eintragen</button>
+
+        <h3>Punktestand</h3>
+        <div class="table-container">
+            <table id="score-table">
+                <thead><tr id="table-header"></tr></thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+        <button style="background:#c0392b; margin-top:30px;" onclick="deleteCurrentGroup()">🗑️ Diese Runde löschen</button>
+    </div>
+</div>
+
+<script>
+    let groups = JSON.parse(localStorage.getItem('doko_groups')) || {};
+    let currentGroupId = null;
+
+    function saveToStorage() {
+        localStorage.setItem('doko_groups', JSON.stringify(groups));
+    }
+
+    function showHome() {
+        document.getElementById('view-home').style.display = 'block';
+        document.getElementById('view-create').style.display = 'none';
+        document.getElementById('view-game').style.display = 'none';
+        renderGroups();
+    }
+
+    function showCreateGroup() {
+        document.getElementById('view-home').style.display = 'none';
+        document.getElementById('view-create').style.display = 'block';
+        document.getElementById('group-name').value = '';
+        const inputs = document.querySelectorAll('.player-name-input');
+        inputs.forEach(i => i.value = '');
+    }
+
+    function renderGroups() {
+        const list = document.getElementById('groups-list');
+        list.innerHTML = '';
+        const keys = Object.keys(groups);
+        if(keys.length === 0) {
+            list.innerHTML = '<p style="text-align:center; color:#7f8c8d;">Noch keine Runden angelegt.</p>';
+            return;
+        }
+        keys.forEach(id => {
+            const g = groups[id];
+            const card = document.createElement('div');
+            card.className = 'group-card';
+            card.innerHTML = `<strong>${g.name}</strong><br><small>Spieler: ${g.players.join(', ')} (${g.players.length} Spieler)</small>`;
+            card.onclick = () => loadGame(id);
+            list.appendChild(card);
+        });
+    }
+
+    function saveNewGroup() {
+        const name = document.getElementById('group-name').value.trim();
+        if(!name) return alert('Bitte einen Namen für die Runde eingeben!');
+
+        const inputs = document.querySelectorAll('.player-name-input');
+        let players = [];
+        inputs.forEach(i => {
+            if(i.value.trim()) players.push(i.value.trim());
+        });
+
+        if(players.length !== 4 && players.length !== 5) {
+            return alert('Es müssen exakt 4 oder 5 Spieler eingetragen werden!');
+        }
+
+        const id = 'g_' + Date.now();
+        groups[id] = {
+            name: name,
+            players: players,
+            rounds: []
+        };
+        saveToStorage();
+        loadGame(id);
+    }
+
+    function loadGame(id) {
+        currentGroupId = id;
+        document.getElementById('view-home').style.display = 'none';
+        document.getElementById('view-game').style.display = 'block';
+        
+        const g = groups[id];
+        document.getElementById('game-title').innerText = g.name;
+        
+        renderGameTable();
+        renderScoreInputs();
+        updateGeberInfo();
+    }
+
+    function updateGeberInfo() {
+        const g = groups[currentGroupId];
+        const infoDiv = document.getElementById('geber-info');
+        if (g.players.length === 5) {
+            const geberIndex = g.rounds.length % 5;
+            infoDiv.innerText = `🔄 Geber diese Runde: ${g.players[geberIndex]} (setzt aus)`;
+        } else {
+            const geberIndex = g.rounds.length % 4;
+            infoDiv.innerText = `🔄 Geber diese Runde: ${g.players[geberIndex]}`;
+        }
+    }
+
+    function renderScoreInputs() {
+        const g = groups[currentGroupId];
+        const container = document.getElementById('score-inputs-container');
+        container.innerHTML = '';
+
+        if(g.players.length === 5) {
+            const geberIndex = g.rounds.length % 5;
+            g.players.forEach((p, index) => {
+                const flex = document.createElement('div');
+                flex.className = 'flex-inputs';
+                if(index === geberIndex) {
+                    flex.innerHTML = `<label style="width:100px;">${p}:</label><input type="number" class="score-in" data-idx="${index}" value="0" disabled> <small style="color:#7f8c8d;">Aussetzer (Geber)</small>`;
+                } else {
+                    flex.innerHTML = `<label style="width:100px;">${p}:</label><input type="number" class="score-in" data-idx="${index}" placeholder="Punkte">`;
+                }
+                container.appendChild(flex);
+            });
+        } else {
+            g.players.forEach((p, index) => {
+                const flex = document.createElement('div');
+                flex.className = 'flex-inputs';
+                flex.innerHTML = `<label style="width:100px;">${p}:</label><input type="number" class="score-in" data-idx="${index}" placeholder="Punkte">`;
+                container.appendChild(flex);
+            });
+        }
+    }
+
+    function addRoundScores() {
+        const g = groups[currentGroupId];
+        const inputs = document.querySelectorAll('.score-in');
+        let roundData = new Array(g.players.length).fill(0);
+        
+        let totalCheck = 0;
+
+        inputs.forEach(input => {
+            const idx = parseInt(input.getAttribute('data-idx'));
+            const val = parseInt(input.value) || 0;
+            roundData[idx] = val;
+            totalCheck += val;
+        });
+
+        if(totalCheck !== 0) {
+            if(!confirm(`Hinweis: Die Summe aller Punkte ergibt aktuell ${totalCheck} (sollte im Idealfall 0 sein). Trotzdem speichern?`)) {
+                return;
+            }
+        }
+
+g.rounds.push(roundData);
+saveToStorage();
+renderGameTable();
+renderScoreInputs();
+updateGeberInfo();
+}
+function renderGameTable() {
+const g = groups[currentGroupId];
+const header = document.getElementById('table-header');
+header.innerHTML = 'Rnd';
+g.players.forEach(p => {
+header.innerHTML += <th>${p}</th>;
+});
+const body = document.getElementById('table-body');
+body.innerHTML = '';
+let runningTotals = new Array(g.players.length).fill(0);
+g.rounds.forEach((round, rIdx) => {
+let rowHtml = <td>${rIdx + 1}</td>;
+round.forEach((score, pIdx) => {
+runningTotals[pIdx] += score;
+if(g.players.length === 5 && rIdx % 5 === pIdx) {
+rowHtml += <td style="color:#7f8c8d; background:#fafafa;">${score} (A)</td>;
+} else {
+rowHtml += <td>${score}</td>;
+}
+});
+body.innerHTML += <tr>${rowHtml}</tr>;
+});
+let totalHtml = <tr class="total-row"><td>Σ</td>;
+runningTotals.forEach(total => {
+let color = total >= 0 ? 'green' : 'red';
+totalHtml += <td style="color:${color};">${total}</td>;
+});
+totalHtml += </tr>;
+body.innerHTML += totalHtml;
+}
+function deleteCurrentGroup() {
+if(confirm('Möchtest du diese Runde wirklich unwiderruflich löschen?')) {
+delete groups[currentGroupId];
+saveToStorage();
+showHome();
+}
+}
+showHome();
